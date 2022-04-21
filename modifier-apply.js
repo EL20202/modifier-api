@@ -34,88 +34,50 @@ ig.module("game.feature.combat.model.modifier-apply").requires(
       this.currentHp = this.getStat("hp");
       for (b = 0; b < sc.COMBAT_STATUS.length; ++b) sc.COMBAT_STATUS[b] && (this.statusStates[b] = new sc.COMBAT_STATUS[b]);
     },
-    getDamage: function(e, g, h, i, j) {
-      var k = e.damageFactor,
-        l = e.noHack || false,
-        o = h.getCombatantRoot(),
-        h = h.combo || o.combo,
-        callbacks = [];
-      if (h.damageCeiling) {
-        var m = Math.max(1 - (h.damageCeiling.sum[this.combatant.id] || 0) / h.damageCeiling.max, 0);
-        m < 0.5 && (k = Math.max(k * 2 * m, 0.01))
-      }
-      h = k;
+    getDamage: function(attackInfo, g, h, i, j) {
+      let callbacks = [], modFunc, modResult, p = 1;
+      let dmgFactor = attackInfo.damageFactor;
       if (!ig.perf.skipDmgModifiers) {
-        e.skillBonus && (k = k * (1 + e.attackerParams.getModifier(e.skillBonus)));
-        var n = e.attackerParams.getModifier("BERSERK");
-        n && e.attackerParams.getHpFactor() <= sc.HP_LOW_WARNING && (k = k * (1 + n));
-        (n = e.attackerParams.getModifier("MOMENTUM")) && (o.isPlayer && o.dashAttackCount) && (k = k * (1 + o.dashAttackCount * n));
-        !ig.vars.get("g.newgame.ignoreSergeyHax") &&
-          (o.isPlayer && !this.combatant.isPlayer && sc.newgame.get("sergey-hax")) && (k = k * 4096);
-        var modFunc, modResult;
         for (modFunc in sc.DAMAGE_MODIFIER_FUNCS) {
-          modResult = sc.DAMAGE_MODIFIER_FUNCS[modFunc](e, k, o, i, j, this);
-          e = modResult.attackInfo;
-          k = modResult.damageFactor;
+          modResult = sc.DAMAGE_MODIFIER_FUNCS[modFunc](attackInfo, dmgFactor, h.getCombatantRoot(), i, j, this);
+          attackInfo = modResult.attackInfo;
+          dmgFactor = modResult.damageFactor;
           modResult.applyDamageCallback && callbacks.push(modResult.applyDamageCallback);
         }
+
+        attackInfo.element && (p = this.getStat("elemFactor")[attackInfo.element - 1] * this.tmpElemFactor[attackInfo.element - 1]);
       }
-      var g = this.damageFactor * (g === void 0 ? 1 : g),
-        p = 1,
-        r = e.attackerParams.getStat("focus", l) / this.getStat("focus", l),
-        n = (Math.pow(r, 0.35) - 0.9) * e.critFactor,
-        n = Math.random() <= n;
-      var elementalDef = 0;
-      if (!ig.perf.skipDmgModifiers) {
-        e.element && (p = this.getStat("elemFactor")[e.element - 1] * this.tmpElemFactor[e.element - 1]);
-        elementalDef = p;
-        g = g * p;
-        e.ballDamage && (g = g * (this.ballFactor + this.statusStates[3].getValue(this)));
-        (m = e.attackerParams.getModifier("CROSS_COUNTER")) && sc.EnemyAnno.isCrossCounterEffective(this.combatant) &&
-          (g = g * (1 + m));
-        (m = e.attackerParams.getModifier("BREAK_DMG")) && sc.EnemyAnno.isWeak(this.combatant) && (g = g * (1 + m));
-        n && (k = k * e.attackerParams.criticalDmgFactor)
-      }
-      o = sc.combat.getGlobalDmgFactor(o.party);
-      m = 0;
-      if (e.statusInflict && g > 0 && !j)
-        var idx = e.element - 1,
-          m = h * e.statusInflict;
-      var v = (Math.pow(1 + (r >= 1 ? r - 1 : 1 - r) * cConst, aConst) - 1) * dConst;
+
+      /*
+      * this is a "cheaty" method for the game can calculate damage propery using the modified damage factor
+      * the reason that the old damage factor must be retained is that
+      * for repeating attack forces, it can have an expoential increase (or decrease)
+      * in attack power as the attack goes on
+      */
+      let oldDmgFactor = attackInfo.damageFactor;
+      attackInfo.damageFactor = dmgFactor;
+      let damageValue = this.parent(attackInfo, g, h, i, j);
+      attackInfo.damageFactor = oldDmgFactor;
+
+      let r = attackInfo.attackerParams.getStat("focus", attackInfo.noHack || false) / this.getStat("focus", attackInfo.noHack || false);
+      let idx, m = 0, v;
+      if (attackInfo.statusInflict && g > 0 && !j)
+        idx = attackInfo.element - 1,
+          m = dmgFactor * attackInfo.statusInflict;
+      v = (Math.pow(1 + (r >= 1 ? r - 1 : 1 - r) * cConst, aConst) - 1) * dConst;
       r = r >= 1 ? 1 + v : Math.max(0, 1 - v);
       if (idx >= 0) {
         m = m * r * this.getStat("statusInflict")[idx] * this.tmpStatusInflict[idx] * p;
-        m = this.statusStates[idx].getInflictValue(m, this, e, i);
+        m = this.statusStates[idx].getInflictValue(m, this, attackInfo, i);
       } else if (this.statusStates[4].id != -1) {
         m = m * r * p;
-        m = this.statusStates[4].getInflictValue(m, this, e, i);
+        m = this.statusStates[4].getInflictValue(m, this, attackInfo, i);
       }
-      i = e.attackerParams.getStat("attack", l);
-      l = e.defenseFactor *
-        this.getStat("defense", l);
-      l = Math.max(1, funcs.PERCENTAGE(i, l));
-      l = l * g;
-      i = funcs.PERCENTAGE(i, 0) - l;
-      l = l * k * o;
-      i = i * k * o;
-      if (!ig.perf.skipDmgModifiers) {
-        l = l * (0.95 + Math.random() * 0.1);
-        i = i * (0.95 + Math.random() * 0.1)
-      }
-      if (e.limiter.noDmg) i = l = 0;
-      l = Math.round(l);
 
-      return {
-        damage: l,
-        defReduced: i,
-        offensiveFactor: k,
-        elementalDef,
-        baseOffensiveFactor: h,
-        defensiveFactor: g,
-        critical: n,
-        status: m,
-        callbacks
-      }
+      damageValue.callbacks = callbacks;
+      damageValue.status = m;
+
+      return damageValue;
     },
     applyDamage: function(a, b, c) {
       var d = c.getCombatantRoot(),
@@ -123,8 +85,7 @@ ig.module("game.feature.combat.model.modifier-apply").requires(
         idx;
       if (c.damageCeiling) {
         d = this.combatant.id;
-        c.damageCeiling.sum[d] || (c.damageCeiling.sum[d] =
-          0);
+        c.damageCeiling.sum[d] || (c.damageCeiling.sum[d] = 0);
         c.damageCeiling.sum[d] = c.damageCeiling.sum[d] + a.baseOffensiveFactor
       }
       var idx = !!b.element ? b.element - 1 : 4;
