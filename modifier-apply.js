@@ -29,10 +29,8 @@ ig.module("game.feature.combat.model.modifier-apply").requires(
   sc.DAMAGE_MODIFIER_FUNCS = {};
   sc.CombatParams.inject({
     init: function(a) {
-      if (a)
-        for (var b in this.baseParams) this.baseParams[b] = a[b] || this.baseParams[b];
-      this.currentHp = this.getStat("hp");
-      for (b = 0; b < sc.COMBAT_STATUS.length; ++b) sc.COMBAT_STATUS[b] && (this.statusStates[b] = new sc.COMBAT_STATUS[b]);
+      this.parent(a)
+      for (b = 4; b < sc.COMBAT_STATUS.length; ++b) sc.COMBAT_STATUS[b] && (this.statusStates[b] = new sc.COMBAT_STATUS[b]);
     },
     getDamage: function(attackInfo, g, h, i, j) {
       let callbacks = [], modFunc, modResult, p = 1;
@@ -80,20 +78,12 @@ ig.module("game.feature.combat.model.modifier-apply").requires(
       return damageValue;
     },
     applyDamage: function(a, b, c) {
-      var d = c.getCombatantRoot(),
-        c = c.combo || d.combo,
-        idx;
-      if (c.damageCeiling) {
-        d = this.combatant.id;
-        c.damageCeiling.sum[d] || (c.damageCeiling.sum[d] = 0);
-        c.damageCeiling.sum[d] = c.damageCeiling.sum[d] + a.baseOffensiveFactor
-      }
-      var idx = !!b.element ? b.element - 1 : 4;
-      a.status && this.statusStates[idx] && this.statusStates[idx].inflict(a.status, this, b);
+      this.parent(a, b, c)
+      let idx = !!b.element ? b.element - 1 : 4;
+      a.status && idx >= 4 && this.statusStates[idx] && this.statusStates[idx].inflict(a.status, this, b);
       if (a.callbacks) {
         a.callbacks.forEach(a => a());
       }
-      this.reduceHp(a.damage)
     }
   });
 });
